@@ -73,12 +73,12 @@ qumulo-smb-lock-manager$ virtualenv ~/qumulo_api
 qumulo-smb-lock-manager$ source ~/qumulo_api/bin/activate
 (qumulo_api) qumulo-smb-lock-manager$ pip install -r requirements.txt 
 (qumulo_api) qumulo-smb-lock-manager$ qq --host your.cluster.company.com login -u lockadmin
-(qumulo_api) qumulo-smb-lock-manager$ ./close_smb_locks.py --host your.cluster.company.com
+(qumulo_api) qumulo-smb-lock-manager$ ./smb_lock_manager.py --host your.cluster.company.com
 ```
 
-To exit your virtual environment, you can run 'deactivate'.
+To exit your virtual environment, you can run `deactivate`.
 
-If desired, you can replace the first line of close_smb_locks.py with the
+If desired, you can replace the first line of smb_lock_manager.py with the
 path to this virtualenv python, eg.:
 `#!/home/user/qumulo_api/bin/python`
 
