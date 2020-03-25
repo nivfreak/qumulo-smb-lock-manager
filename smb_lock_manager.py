@@ -1,8 +1,12 @@
 #!/usr/bin/env python
+# PYTHON_ARGCOMPLETE_OK
 """SMB file lock manager for Qumulo clusters"""
 import argparse
 import os
+from socket import error as socket_error
 import sys
+import argcomplete
+
 
 import qumulo.lib.auth as qauth
 import qumulo.lib.request as qrequest
@@ -29,14 +33,14 @@ class QumuloConnections(object):
         """Login with either stored credentials, or username and password"""
         try:
             qrestauth.who_am_i(self.conninfo, self.credentials)
-        except qrequest.RequestError:
+        except (qrequest.RequestError, socket_error):
             try:
                 login_results, _ = qrestauth.login(\
                     self.conninfo, None, self.user, self.passwd)
 
                 self.credentials = qauth.Credentials.from_login_response(\
                     login_results)
-            except qrequest.RequestError, excpt:
+            except (qrequest.RequestError, socket_error), excpt:
                 print "Error connecting to api at %s:%s\n%s" % (self.host,
                                                                 self.port,
                                                                 excpt)
@@ -111,6 +115,7 @@ def main():
                         dest="noninteractive", action='store_true',
                         help="Simply print a list of locked file handles.")
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     qapi = QumuloConnections(args)
