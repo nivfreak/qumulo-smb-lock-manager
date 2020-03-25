@@ -82,3 +82,11 @@ If desired, you can replace the first line of smb_lock_manager.py with the
 path to this virtualenv python, eg.:
 `#!/home/user/qumulo_api/bin/python`
 
+
+Standalone Executable Package
+--------------------------
+
+Want something even simpler? If your system has python2, pip, and python3,
+you can run `./build_binary.sh` to produce a standalone package you can
+distribute.
+
