@@ -1,0 +1,4 @@
+future==0.18.2
+pkg-resources==0.0.0
+qumulo-api==3.0.3
+tqdm==4.43.0
