@@ -5,7 +5,7 @@ Summary
 -------------------------
 This project will:
 
-    * Require a Qumulo cluster running 3.0.3 _only_.
+    * Require a Qumulo cluster running 3.0.4 or higher. 
 
     * Provide a list of SMB file locks across an entire qumulo cluster by
         communicating with a single node. 
@@ -14,9 +14,6 @@ This project will:
         per file/user.
 
 It will NOT currently:
-
-    * Support clusters before or after Qumulo core 3.0.3. The API is currently
-      marked as beta, and will change in 3.0.4.
 
     * Close all locks held on a file or directory
     
