@@ -23,10 +23,11 @@ class QumuloConnections(object):
         self.passwd = args.passwd
         self.host = args.host
 
-        self.conninfo = qrequest.Connection(self.host, int(self.port))
         #self.credentials = None
         self.credentials = qauth.get_credentials(\
             qauth.credential_store_filename())
+        self.conninfo = qrequest.Connection(self.host, int(self.port),
+            self.credentials)
         self.login()
 
     def login(self):
@@ -40,17 +41,17 @@ class QumuloConnections(object):
 
                 self.credentials = qauth.Credentials.from_login_response(\
                     login_results)
-            except (qrequest.RequestError, socket_error), excpt:
-                print "Error connecting to api at %s:%s\n%s" % (self.host,
+            except ((qrequest.RequestError, socket_error), excpt):
+                print("Error connecting to api at %s:%s\n%s" % (self.host,
                                                                 self.port,
-                                                                excpt)
+                                                                excpt))
                 sys.exit(1)
 
     def get_file_handles(self):
         """Get all locked SMB file handles"""
         file_handles = {}
         for lock in qsmb.list_file_handles(self.conninfo,
-                                           self.credentials).next():
+                                           self.credentials).__next__():
             if lock:
                 file_handles.update(lock)
         return file_handles
@@ -60,15 +61,16 @@ class QumuloConnections(object):
         qsmb.close_smb_file(self.conninfo, self.credentials, location)
 
     def file_handle_info(self, file_handle):
+        fh_dict = list(file_handle.values())[1]
         """Lookup a full set of file handle information"""
         # get the lock location for the file handle
-        location = file_handle.values()[1]['location']
+        location = fh_dict['location']
         # Store the access masks eg. MS_ACCESS_FILE_READ_ATTRIBUTES,
         # MS_ACCESS_FILE_WRITE_ATTRIBUTES, MS_ACCESS_SYNCHRONIZE
-        access_mask = file_handle.values()[1]['access_mask']
+        access_mask = fh_dict['access_mask']
         # Get the auth_id for the lock owner, this is the internal qumulo
         # identiy stored on disk
-        owner_auth_id = file_handle.values()[1]['owner']
+        owner_auth_id = fh_dict['owner']
         # Resolve the auth_id to a human readable name
         owner_entry = qrestauth.find_identity(self.conninfo, self.credentials,
                                               auth_id=owner_auth_id).data
@@ -85,13 +87,18 @@ class QumuloConnections(object):
 def print_fhs(file_handles):
     """Prints a list of file handles, but you can do better than this!"""
     # Print a header
-    print "{:<2} {:<20} {:<20} {:<100}\n{:>120}".format(\
-        "#", "Location", "User", "Path", "Access Mask")
+    print("{:<2} {:<20} {:<20} {:<10} {:<100}".format(\
+            "#", "Location", "User", "Lock", "Path"))
 
     # Display our enriched information on locked file handles
     for num, lock in enumerate(file_handles):
-        print("{num:<2} {location:<20} {owner_name:<20} {path:<100}\n"
-              "{access_mask:>120}\n").format(num=num, **lock)
+        amask = str(lock['access_mask'])
+        if 'WRITE' in amask:
+            lock_type = "WRITE"
+        else:
+            lock_type = "READ"
+        print("{num:<2} {location:<20} {owner_name:<20} {lock_type:<10} {path:<100}"
+              "".format(num=num, lock_type=lock_type, **lock))
 
 def main():
     """Main"""
@@ -136,7 +143,7 @@ def main():
     print_fhs(file_handles)
 
     if not args.noninteractive:
-        lock_to_destroy = input("What # do you want to close? ")
+        lock_to_destroy = int(input("What # do you want to close? "))
 
         # If a valid option was chosen, close the file handle lock.
         if lock_to_destroy < len(file_handles):
@@ -144,7 +151,7 @@ def main():
             # Use until smb.close_smb_file is in your qumulo_api package
             qapi.close_location(location_to_destroy)
         else:
-            print "Invalid number"
+            print("Invalid number")
 
 
 # Main
