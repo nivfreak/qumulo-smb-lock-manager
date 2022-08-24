@@ -1,11 +1,2 @@
-argcomplete==1.11.1
-configparser==4.0.2
-contextlib2==0.6.0.post1
-future==0.18.2
-importlib-metadata==1.5.0
-pathlib2==2.3.5
-qumulo-api>=3.0.4
-scandir==1.10.0
-six==1.14.0
-tqdm==4.43.0
-zipp==1.2.0
+argcomplete==2.0.0
+qumulo-api>=5.0.0

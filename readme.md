@@ -5,7 +5,7 @@ Summary
 -------------------------
 This project will:
 
-    * Require a Qumulo cluster running 3.0.4 or higher. 
+    * Require a Qumulo cluster running 3.0.4 or higher. Recently tested on 5.2.0.
 
     * Provide a list of SMB file locks across an entire qumulo cluster by
         communicating with a single node. 
@@ -27,22 +27,19 @@ It will NOT currently:
 API User
 --------------------------
 
-The API user used to connect to the Qumulo cluster must be granted a role with a
-minimum of `PRIVILEGE_SMB_FILE_HANDLE_READ`, `PRIVILEGE_SMB_FILE_HANDLE_WRITE`, and 
-`PRIVILEGE_IDENTITY_READ`. As a best practice, use an account with only this Role.
+The API user used to connect to the Qumulo cluster must be granted a role with at least the following rights:
+`PRIVILEGE_SMB_FILE_HANDLE_READ`, `PRIVILEGE_SMB_FILE_HANDLE_WRITE`, `PRIVILEGE_IDENTITY_READ`, `PRIVILEGE_ANALYTICS_READ`, `PRIVILEGE_ANALYTICS_READ`, and `PRIVILEGE_ANALYTICS_READ`.
 
-If you wish to use an admin account to create this role, do so like this:
+As a best practice, use an account with only this Role.
+
+If you wish to use an admin account to create this role from the CLI, do so like this:
 
 ```
 $ qq auth_create_role -r SMB-lock-manager --description "Manage SMB file locks"
-$ qq auth_modify_role -r SMB-lock-manager -G PRIVILEGE_SMB_FILE_HANDLE_READ
-$ qq auth_modify_role -r SMB-lock-manager -G PRIVILEGE_SMB_FILE_HANDLE_WRITE
-$ qq auth_modify_role -r SMB-lock-manager -G PRIVILEGE_IDENTITY_READ
+$ qq auth_modify_role -r SMB-lock-manager -G PRIVILEGE_SMB_FILE_HANDLE_READ PRIVILEGE_SMB_FILE_HANDLE_WRITE PRIVILEGE_IDENTITY_READ PRIVILEGE_ANALYTICS_READ PRIVILEGE_FS_LOCK_READ PRIVILEGE_DNS_USE
 ```
 
-As of 3.0.3, roles must be created using the CLI or API, and then can
-privileges and membership may be managed by the WebUI. 
-
+In recent version of Qumulo Core, these roles may be defined in the WebUI under the Role Managment section.
 
 Authentication
 --------------------------
@@ -53,9 +50,9 @@ tried in the following order:
 1) Credential reuse from the qumulo_api cli. You can use 'qq login' to create
     a credential file. This provides interactive password entry, which is
     the most secure method.
-2) Passed as parameters to the script itself using --host, --user, and
+2) Passed as parameters to the script itself using --host, --port, --user, and
     --password.
-3) Specified by the environmental variables API_HOSTNAME, API_USER, and
+3) Specified by the environmental variables API_HOSTNAME, API_PORT, API_USER, and
     API_PASSWORD. This would be most useful for non-interactive usage.
 
 

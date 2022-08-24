@@ -3,16 +3,15 @@
 """SMB file lock manager for Qumulo clusters"""
 import argparse
 import os
-from socket import error as socket_error
 import sys
 import argcomplete
-
 
 import qumulo.lib.auth as qauth
 import qumulo.lib.request as qrequest
 import qumulo.rest.auth as qrestauth
-import qumulo.rest.fs as qfs
-import qumulo.rest.smb as qsmb
+import qumulo.rest.dns as qrestdns
+import qumulo.rest.fs as qrestfs
+import qumulo.rest.smb as qrestsmb
 
 class QumuloConnections(object):
     """API Connection Object"""
@@ -23,7 +22,6 @@ class QumuloConnections(object):
         self.passwd = args.passwd
         self.host = args.host
 
-        #self.credentials = None
         self.credentials = qauth.get_credentials(\
             qauth.credential_store_filename())
         self.conninfo = qrequest.Connection(self.host, int(self.port),
@@ -34,14 +32,13 @@ class QumuloConnections(object):
         """Login with either stored credentials, or username and password"""
         try:
             qrestauth.who_am_i(self.conninfo, self.credentials)
-        except (qrequest.RequestError, socket_error):
+        except (qrequest.RequestError, ConnectionRefusedError):
             try:
                 login_results, _ = qrestauth.login(\
                     self.conninfo, None, self.user, self.passwd)
-
-                self.credentials = qauth.Credentials.from_login_response(\
+                self.conninfo.credentials = qauth.Credentials.from_login_response(\
                     login_results)
-            except ((qrequest.RequestError, socket_error), excpt):
+            except (qrequest.RequestError, ConnectionRefusedError) as excpt:
                 print("Error connecting to api at %s:%s\n%s" % (self.host,
                                                                 self.port,
                                                                 excpt))
@@ -50,57 +47,77 @@ class QumuloConnections(object):
     def get_file_handles(self):
         """Get all locked SMB file handles"""
         file_handles = {}
-        for lock in qsmb.list_file_handles(self.conninfo,
-                                           self.credentials).__next__():
-            if lock:
-                file_handles.update(lock)
-        return file_handles
+        for locks in qrestsmb.list_file_handles(self.conninfo, self.credentials,
+                                                resolve_paths=True).__next__():
+            if locks:
+                file_handles.update(locks)
+
+        file_handles = file_handles['file_handles']
+
+        # Add a human readable identity
+        for lock in file_handles:
+                authid = lock['handle_info']['owner']
+                username = self.resolve_identities(authid)
+                lock['handle_info']['owner_name'] = username
+
+        actionable_file_handles = []
+        # XXX This may need to be handled differently at scale, one single API
+        # request is likely better.
+        for lock in file_handles:
+            file = lock['handle_info']
+            ip, hostname = self.get_lock_hosts(file['path'])
+            # Exclude locks that don't have an associated ip address, these are
+            #    typically shared(?) read locks on directories.
+            if ip is None:
+                next
+            else:
+                file['ip'] = ip
+                file['hostname'] = hostname
+                actionable_file_handles.append(file)
+        return actionable_file_handles
 
     def close_location(self, location):
         """Close a single file handle by location id"""
-        qsmb.close_smb_file(self.conninfo, self.credentials, location)
+        qrestsmb.close_smb_file(self.conninfo, self.credentials, location)
 
-    def file_handle_info(self, file_handle):
-        fh_dict = list(file_handle.values())[1]
-        """Lookup a full set of file handle information"""
-        # get the lock location for the file handle
-        location = fh_dict['location']
-        # Store the access masks eg. MS_ACCESS_FILE_READ_ATTRIBUTES,
-        # MS_ACCESS_FILE_WRITE_ATTRIBUTES, MS_ACCESS_SYNCHRONIZE
-        access_mask = fh_dict['access_mask']
-        # Get the auth_id for the lock owner, this is the internal qumulo
-        # identiy stored on disk
-        owner_auth_id = fh_dict['owner']
-        # Resolve the auth_id to a human readable name
-        owner_entry = qrestauth.find_identity(self.conninfo, self.credentials,
-                                              auth_id=owner_auth_id).data
-        # Parse the file_id from the lock location field
-        file_id = location.split('.')[1]
-        # Look up file information for the file_id
-        file_entry = qfs.resolve_paths(self.conninfo, self.credentials,
-                                       [file_id]).data[0]
-        file_entry['owner_name'] = owner_entry['name']
-        file_entry['location'] = location
-        file_entry['access_mask'] = access_mask
-        return file_entry
+
+    def resolve_identities(self, owner):
+        """Resolve the auth_id to a human readable name"""
+        return qrestauth.find_identity(self.conninfo, self.credentials,
+                                              auth_id=owner).data['name']
+
+
+    def get_lock_hosts(self, path):
+        """Enumerate a list of clients that have a lock on path"""
+        fslocks = qrestfs.list_locks_by_file(self.conninfo, self.credentials,
+                    protocol='smb', lock_type='share-mode', file_path=path)
+
+        ips = []
+        for fslock in fslocks.data['grants']:
+            ips.append(fslock['owner_address'])
+
+        dns = qrestdns.resolve_ips_to_names(self.conninfo, self.credentials, ips)
+
+        all_hosts=list((sub['hostname'] for sub in dns.data if sub['result'] == 'OK'))
+
+        # XXX We should probably handle multiple DNS names, but multiple IPs? Cheat for now...
+        if len(ips) >= 1 and len(all_hosts) >= 1:
+            return [ips[0], all_hosts[0]]
+        else:
+            return None, None
 
 def print_fhs(file_handles):
     """Prints a list of file handles, but you can do better than this!"""
     # Print a header
-    print("{:<2} {:<20} {:<20} {:<10} {:<100}".format(\
-            "#", "Location", "User", "Lock", "Path"))
+    print("{:<2} {:<20} {:<20} {:<20} {:<30} {:<100}".format(\
+            "#", "Location", "User", "IP", "Hostname", "Path"))
 
     # Display our enriched information on locked file handles
     for num, lock in enumerate(file_handles):
-        amask = str(lock['access_mask'])
-        if 'WRITE' in amask:
-            lock_type = "WRITE"
-        else:
-            lock_type = "READ"
-        print("{num:<2} {location:<20} {owner_name:<20} {lock_type:<10} {path:<100}"
-              "".format(num=num, lock_type=lock_type, **lock))
+        print("{num:<2} {location:<20} {owner_name:<20} {ip:<20} {hostname:<30}"
+              "{path:<100}".format(num=num, **lock))
 
-def main():
+def interactive_unlock():
     """Main"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", "--ip", dest="host", required=False,
@@ -132,12 +149,8 @@ def main():
         qapi.close_location(args.location)
         sys.exit(0)
 
-    # Retreive all locked SMB file handles
-    open_smb_files = qapi.get_file_handles()
-
-    # Lookup user and file information for locked file handles
-    file_handles = [qapi.file_handle_info(i)
-                    for i in open_smb_files['file_handles']]
+    # Get user and file information for locked file handles
+    file_handles = qapi.get_file_handles()
 
     # Try to print the file handles in some useful format
     print_fhs(file_handles)
@@ -148,7 +161,6 @@ def main():
         # If a valid option was chosen, close the file handle lock.
         if lock_to_destroy < len(file_handles):
             location_to_destroy = file_handles[lock_to_destroy]['location']
-            # Use until smb.close_smb_file is in your qumulo_api package
             qapi.close_location(location_to_destroy)
         else:
             print("Invalid number")
@@ -156,4 +168,4 @@ def main():
 
 # Main
 if __name__ == '__main__':
-    main()
+    interactive_unlock()
