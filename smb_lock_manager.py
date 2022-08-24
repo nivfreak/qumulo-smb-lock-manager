@@ -123,8 +123,8 @@ def interactive_unlock():
     parser.add_argument("--host", "--ip", dest="host", required=False,
                         default=os.environ.get('API_HOSTNAME', "localhost"),
                         help="Specify a hostname or ip to reach the API")
-    parser.add_argument("-P", "--port", type=int, dest="port", default=8000,
-                        required=False,
+    parser.add_argument("-P", "--port", type=int, dest="port", required=False,
+                        default=os.environ.get('API_PORT', 8000),
                         help="Specify API port on cluster; defaults to 8000")
     parser.add_argument("-u", "--user", dest="user", required=False,
                         default=os.environ.get('API_USER', "admin"),
